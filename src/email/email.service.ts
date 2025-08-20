@@ -395,4 +395,56 @@ export class EmailService {
       throw error;
     }
   }
+
+  async sendRentalCancellationNotification(data: {
+    to: string;
+    renterName: string;
+    equipmentName: string;
+    ownerName: string;
+    reason: string;
+  }) {
+    const { to, renterName, equipmentName, ownerName, reason } = data;
+
+    const subject = `Pedido de Aluguel Cancelado - ${equipmentName}`;
+
+    const html = this.getEmailTemplate(
+      'Pedido de Aluguel Cancelado',
+      `
+      <div style="margin-bottom: 20px;">
+        <p>Olá,</p>
+        <p>Informamos que o pedido de aluguel foi cancelado:</p>
+      </div>
+
+      <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+        <h3 style="color: #dc3545; margin-top: 0;">📋 Detalhes do Cancelamento</h3>
+        <p><strong>Equipamento:</strong> ${equipmentName}</p>
+        <p><strong>Locatário:</strong> ${renterName}</p>
+        <p><strong>Locador:</strong> ${ownerName}</p>
+        <p><strong>Motivo:</strong> ${reason}</p>
+        <p><strong>Data:</strong> ${new Date().toLocaleDateString('pt-AO')}</p>
+      </div>
+
+      <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin: 20px 0;">
+        <p style="margin: 0; color: #856404;">
+          <strong>ℹ️ Informação:</strong> O equipamento está novamente disponível para novas solicitações.
+        </p>
+      </div>
+
+      <div style="text-align: center; margin-top: 30px;">
+        <a href="${process.env.FRONTEND_URL}/my-rentals"
+           style="background-color: #3569b0; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+          Ver Meus Aluguéis
+        </a>
+      </div>
+      `
+    );
+
+    try {
+      await this.sendEmail(to, subject, html);
+      this.logger.log(`Notificação de cancelamento enviada para ${to}`);
+    } catch (error) {
+      this.logger.error(`Erro ao enviar notificação de cancelamento para ${to}:`, error);
+      throw error;
+    }
+  }
 }

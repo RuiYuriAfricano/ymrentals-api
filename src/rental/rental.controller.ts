@@ -99,6 +99,14 @@ export class RentalController {
     return this.rentalService.uploadPaymentReceipt(id, receiptData.paymentReceipt, req.user.userId);
   }
 
+  @Post(':id/pay-with-wallet')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Pay rental with digital wallet' })
+  async payWithWallet(@Param('id') id: string, @Request() req) {
+    return this.rentalService.payWithWallet(id, req.user.userId);
+  }
+
   @Patch(':id/validate-payment')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

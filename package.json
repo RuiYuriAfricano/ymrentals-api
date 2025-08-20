@@ -11,7 +11,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
+    "start:prod": "node dist/src/main",
     "postinstall": "npx prisma generate",
     "prebuild": "npx prisma generate",
     "deploy:check": "echo 'Checking deployment requirements...' && node -v && npm -v && npx prisma --version",

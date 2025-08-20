@@ -39,9 +39,42 @@ export class RentalCronService {
     }
   }
 
-  // @Cron(CronExpression.EVERY_DAY_AT_10AM)
-  // async checkOverdueRentals() {
-  //   this.logger.log('Verificando aluguéis em atraso...');
-  //   // Implementar quando necessário
-  // }
+  @Cron(CronExpression.EVERY_HOUR)
+  async cancelExpiredApprovedRentals() {
+    this.logger.log('Verificando pedidos aprovados expirados...');
+
+    try {
+      const cancelledRentals = await this.rentalService.cancelExpiredApprovedRentals();
+
+      for (const rental of cancelledRentals) {
+        // Enviar notificação por email para o locatário
+        await this.emailService.sendRentalCancellationNotification({
+          to: rental.renter.email,
+          renterName: rental.renter.fullName,
+          equipmentName: rental.equipment.name,
+          ownerName: rental.owner.fullName,
+          reason: 'Tempo limite para pagamento expirado'
+        });
+
+        // Enviar notificação para o locador
+        await this.emailService.sendRentalCancellationNotification({
+          to: rental.owner.email,
+          renterName: rental.renter.fullName,
+          equipmentName: rental.equipment.name,
+          ownerName: rental.owner.fullName,
+          reason: 'Locatário não efetuou pagamento no prazo'
+        });
+
+        this.logger.log(`Rental expirado cancelado: ${rental.id} - Equipamento: ${rental.equipment.name}`);
+      }
+
+      if (cancelledRentals.length > 0) {
+        this.logger.log(`Cancelados ${cancelledRentals.length} pedidos expirados`);
+      } else {
+        this.logger.log('Nenhum pedido expirado encontrado');
+      }
+    } catch (error) {
+      this.logger.error('Erro ao cancelar pedidos expirados:', error);
+    }
+  }
 }

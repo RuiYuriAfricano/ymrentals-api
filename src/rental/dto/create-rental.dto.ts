@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNumber, IsDateString, IsOptional, IsEnum, IsInt, Min, Max, Validate } from 'class-validator';
+import { IsString, IsNumber, IsDateString, IsOptional, IsEnum, IsInt, Min, Max, Validate, IsBoolean } from 'class-validator';
 import { IsValidDateRange } from '../../cart/validators/date-range.validator';
 
 export class CreateRentalDto {
@@ -44,8 +44,8 @@ export class CreateRentalDto {
   @Max(365)
   maxRentalDays?: number;
 
-  @ApiProperty({ example: 'RECEIPT', description: 'Payment method', enum: ['REFERENCE', 'RECEIPT'] })
-  @IsEnum(['REFERENCE', 'RECEIPT'])
+  @ApiProperty({ example: 'RECEIPT', description: 'Payment method', enum: ['REFERENCE', 'RECEIPT', 'WALLET'] })
+  @IsEnum(['REFERENCE', 'RECEIPT', 'WALLET'])
   paymentMethod!: string;
 
   @ApiProperty({ example: 'REF123456789', description: 'Payment reference (for REFERENCE method)', required: false })
@@ -56,4 +56,29 @@ export class CreateRentalDto {
   @ApiProperty({ example: 'uuid-equipment-id', description: 'Rented equipment ID' })
   @IsString()
   equipmentId!: string;
+
+  @ApiProperty({ example: -8.8390, description: 'Renter latitude at request time', required: false })
+  @IsOptional()
+  @IsNumber()
+  renterLatitude?: number;
+
+  @ApiProperty({ example: 13.2894, description: 'Renter longitude at request time', required: false })
+  @IsOptional()
+  @IsNumber()
+  renterLongitude?: number;
+
+  @ApiProperty({ example: 'Rua da Independência, 123, Maianga, Luanda', description: 'Renter formatted address', required: false })
+  @IsOptional()
+  @IsString()
+  renterAddress?: string;
+
+  @ApiProperty({ example: false, description: 'Whether to pay priority fee', required: false })
+  @IsOptional()
+  @IsBoolean()
+  hasPriority?: boolean;
+
+  @ApiProperty({ example: 5000, description: 'Priority fee amount in AOA', required: false })
+  @IsOptional()
+  @IsNumber()
+  priorityAmount?: number;
 }

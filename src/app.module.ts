@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { UserModule } from './user/user.module';
 import {ReviewModule} from './review/review.module'
 import {RentalModule} from './rental/rental.module'
@@ -18,9 +19,34 @@ import { EquipmentEditModule } from './equipment-edit/equipment-edit.module';
 import { StatsModule } from './stats/stats.module';
 import { CartModule } from './cart/cart.module';
 import { HealthModule } from './health/health.module';
+import { WalletModule } from './wallet/wallet.module';
+import { SponsorshipModule } from './sponsorship/sponsorship.module';
 
 
 @Module({
-  imports: [UserModule, ReviewModule, RentalModule, EquipmentModule, AddressModule, PrismaModule, ChatModule, FavoritesModule, CartModule, UploadModule, AdminModule, ModerationModule, NotificationsModule, EmailModule, CategoryModule, ContentModule, EquipmentEditModule, StatsModule, HealthModule], // Importando UserModule e PrismaModule
+  imports: [
+    ScheduleModule.forRoot(),
+    UserModule,
+    ReviewModule,
+    RentalModule,
+    EquipmentModule,
+    AddressModule,
+    PrismaModule,
+    ChatModule,
+    FavoritesModule,
+    CartModule,
+    UploadModule,
+    AdminModule,
+    ModerationModule,
+    NotificationsModule,
+    EmailModule,
+    CategoryModule,
+    ContentModule,
+    EquipmentEditModule,
+    StatsModule,
+    HealthModule,
+    WalletModule,
+    SponsorshipModule
+  ],
 })
 export class AppModule {}

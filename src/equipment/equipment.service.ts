@@ -8,11 +8,30 @@ import { LocationSearchDto } from './dto/location-search.dto';
 export class EquipmentService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private getOrderBy(sortBy?: string) {
+    switch (sortBy) {
+      case 'price_asc':
+        return { price: 'asc' as const };
+      case 'price_desc':
+        return { price: 'desc' as const };
+      case 'name_asc':
+        return { name: 'asc' as const };
+      case 'name_desc':
+        return { name: 'desc' as const };
+      case 'newest':
+        return { createdAt: 'desc' as const };
+      default:
+        return { createdAt: 'desc' as const }; // relevance/default
+    }
+  }
+
   async create(createEquipmentDto: CreateEquipmentDto) {
     const {
       name,
       description,
       category,
+      brand,
+      model,
       price,
       pricePeriod,
       salePrice,
@@ -47,6 +66,8 @@ export class EquipmentService {
         name,
         description,
         category,
+        brand,
+        model,
         price,
         pricePeriod,
         salePrice,
@@ -72,6 +93,8 @@ export class EquipmentService {
     page?: number;
     limit?: number;
     showAll?: boolean; // Para moderadores/admins verem todos
+    sortBy?: string; // Ordenação
+    brands?: string[]; // Filtro por marcas múltiplas
   }) {
     const where: any = {
       deletedAt: null,
@@ -107,6 +130,13 @@ export class EquipmentService {
       if (filters.maxPrice) where.price.lte = filters.maxPrice;
     }
 
+    // Filtro por marcas múltiplas
+    if (filters?.brands && filters.brands.length > 0) {
+      where.brand = {
+        in: filters.brands
+      };
+    }
+
     const skip = filters?.page && filters?.limit ? (filters.page - 1) * filters.limit : 0;
     const take = filters?.limit || undefined;
 
@@ -132,7 +162,7 @@ export class EquipmentService {
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: this.getOrderBy(filters?.sortBy),
       }),
       this.prisma.equipment.count({ where }),
     ]);
@@ -185,6 +215,13 @@ export class EquipmentService {
       where.price = {};
       if (otherFilters.minPrice) where.price.gte = otherFilters.minPrice;
       if (otherFilters.maxPrice) where.price.lte = otherFilters.maxPrice;
+    }
+
+    // Filtro por marcas múltiplas
+    if (otherFilters.brands && otherFilters.brands.length > 0) {
+      where.brand = {
+        in: otherFilters.brands
+      };
     }
 
     const skip = (page - 1) * limit;
@@ -400,6 +437,20 @@ export class EquipmentService {
     });
 
     return categories.map(c => c.category).filter(Boolean);
+  }
+
+  async getUniqueBrands() {
+    const brands = await this.prisma.equipment.findMany({
+      where: {
+        deletedAt: null,
+        moderationStatus: 'APPROVED',
+        brand: { not: null }
+      },
+      select: { brand: true },
+      distinct: ['brand'],
+    });
+
+    return brands.map(b => b.brand).filter(Boolean).sort();
   }
 
   async softDelete(id: string, userId: string) {

@@ -74,6 +74,9 @@ model User {
   Address                                 Address?        @relation(fields: [addressId], references: [id])
   notifications                           notifications[]
   moderatedEquipmentEdits                 EquipmentEdit[] @relation("EquipmentEditModerator")
+  wallet                                  Wallet?
+  sponsoredAds                            AdSponsorship[] @relation("SponsorAds")
+  targetedAds                             AdSponsorship[] @relation("TargetedAds")
 }
 
 model Address {
@@ -98,6 +101,8 @@ model Equipment {
   description      String?
   category         String          // Manter para compatibilidade
   categoryId       String?         // Nova relação com Category
+  brand            String?         // Marca do equipamento (ex: Caterpillar, Komatsu)
+  model            String?         // Modelo específico do equipamento
   pricePeriod      PricePeriod?
   price            Float?
   salePrice        Float?
@@ -124,6 +129,7 @@ model Equipment {
   rentals          Rental[]
   reviews          Review[]
   edits            EquipmentEdit[]
+  sponsorships     AdSponsorship[]
 }
 
 model Rental {
@@ -146,6 +152,15 @@ model Rental {
   moderatedAt           DateTime?    // Data de moderação do pagamento
   returnNotificationSent Boolean     @default(false)
   returnReminderDate    DateTime?    // Data para enviar lembrete de devolução
+  // Localização do locatário no momento da solicitação
+  renterLatitude        Float?       // Latitude do locatário
+  renterLongitude       Float?       // Longitude do locatário
+  renterAddress         String?      // Endereço formatado do locatário
+  // Sistema de prioridade
+  hasPriority           Boolean      @default(false) // Se pagou taxa de prioridade
+  priorityAmount        Float?       // Valor pago pela prioridade
+  priorityPaidAt        DateTime?    // Data do pagamento da prioridade
+  approvedAt            DateTime?    // Data de aprovação do pedido
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
   deletedAt             DateTime?
@@ -399,6 +414,7 @@ enum EquipmentEditStatus {
 enum PaymentMethod {
   REFERENCE
   RECEIPT
+  WALLET
 }
 
 enum PaymentStatus {
@@ -439,4 +455,85 @@ model SystemConfig {
   updatedBy               String?
 
   @@map("system_config")
+}
+
+// Carteira Digital
+model Wallet {
+  id            String             @id @default(uuid())
+  userId        String             @unique
+  balance       Float              @default(0) // Saldo em Kwanza
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions  WalletTransaction[]
+
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id                String                    @id @default(uuid())
+  walletId          String
+  type              WalletTransactionType
+  amount            Float                     // Valor em Kwanza (positivo para crédito, negativo para débito)
+  description       String
+  status            WalletTransactionStatus   @default(PENDING)
+  reference         String?                   // Referência externa (ProxyPay, etc.)
+  proxyPayReference String?                   // Referência específica do ProxyPay
+  proxyPayId        String?                   // ID da transação no ProxyPay
+  metadata          Json?                     // Dados adicionais (JSON)
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  wallet            Wallet                    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@map("wallet_transactions")
+}
+
+enum WalletTransactionType {
+  DEPOSIT           // Depósito
+  WITHDRAWAL        // Saque
+  PAYMENT           // Pagamento de aluguel
+  REFUND            // Reembolso
+  PRIORITY_FEE      // Taxa de prioridade
+  PROMOTION_FEE     // Taxa de promoção
+  COMMISSION        // Comissão da plataforma
+  BONUS             // Bônus/recompensa
+}
+
+enum WalletTransactionStatus {
+  PENDING           // Pendente
+  PROCESSING        // Processando
+  COMPLETED         // Concluída
+  FAILED            // Falhou
+  CANCELLED         // Cancelada
+  REFUNDED          // Reembolsada
+}
+
+// Patrocínio de Anúncios
+model AdSponsorship {
+  id              String                @id @default(uuid())
+  sponsorId       String                // ID do locador que patrocina
+  targetUserId    String?               // ID do usuário alvo (opcional, se null = todos)
+  equipmentId     String?               // ID do equipamento específico (opcional)
+  amount          Float                 // Valor pago pelo patrocínio
+  duration        Int                   // Duração em dias
+  startDate       DateTime              // Data de início
+  endDate         DateTime              // Data de fim
+  status          AdSponsorshipStatus   @default(ACTIVE)
+  impressions     Int                   @default(0) // Número de visualizações
+  clicks          Int                   @default(0) // Número de cliques
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  sponsor         User                  @relation("SponsorAds", fields: [sponsorId], references: [id])
+  targetUser      User?                 @relation("TargetedAds", fields: [targetUserId], references: [id])
+  equipment       Equipment?            @relation(fields: [equipmentId], references: [id])
+
+  @@map("ad_sponsorships")
+}
+
+enum AdSponsorshipStatus {
+  ACTIVE
+  PAUSED
+  EXPIRED
+  CANCELLED
 }

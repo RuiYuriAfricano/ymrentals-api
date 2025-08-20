@@ -5,9 +5,10 @@ import { RentalCronService } from './rental.cron';
 import { PrismaService } from '../prisma/prisma.service';
 
 import { EmailModule } from '../email/email.module';
+import { WalletModule } from '../wallet/wallet.module';
 
 @Module({
-  imports: [EmailModule],
+  imports: [EmailModule, WalletModule],
   controllers: [RentalController],
   providers: [RentalService, RentalCronService, PrismaService],
   exports: [RentalService],

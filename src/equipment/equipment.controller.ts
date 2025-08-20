@@ -29,7 +29,12 @@ export class EquipmentController {
     @Query('location') location?: string,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
+    @Query('brands') brands?: string,
+    @Query('sortBy') sortBy?: string,
   ) {
+    // Converter string de marcas separadas por vírgula em array
+    const brandsArray = brands ? brands.split(',').map(b => b.trim()).filter(b => b) : undefined;
+
     return this.equipmentService.findAll({
       category,
       search,
@@ -38,6 +43,8 @@ export class EquipmentController {
       location,
       page: page || 1,
       limit: limit || 10,
+      brands: brandsArray,
+      sortBy,
     });
   }
 
@@ -81,6 +88,12 @@ export class EquipmentController {
   @ApiOperation({ summary: 'Get all equipment categories' })
   async getCategories() {
     return this.equipmentService.getCategories();
+  }
+
+  @Get('brands/list')
+  @ApiOperation({ summary: 'Get unique brands list' })
+  async getBrands() {
+    return this.equipmentService.getUniqueBrands();
   }
 
   @Delete(':id')

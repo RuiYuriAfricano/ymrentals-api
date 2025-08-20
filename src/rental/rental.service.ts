@@ -1,11 +1,16 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { WalletService } from '../wallet/wallet.service';
+import { WalletTransactionType } from '../wallet/dto/wallet-transaction.dto';
 import { CreateRentalDto } from './dto/create-rental.dto';
 import { UpdateRentalDto } from './dto/update-rental.dto';
 
 @Injectable()
 export class RentalService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly walletService: WalletService
+  ) {}
 
   async create(createRentalDto: CreateRentalDto & { renterId: string }) {
     console.log('Creating rental with data:', createRentalDto);
@@ -110,7 +115,15 @@ export class RentalService {
         status: 'PENDING',
         paymentStatus: 'PENDING',
         paymentReceiptStatus: createRentalDto.paymentMethod === 'RECEIPT' ? 'PENDING' : undefined,
-        pricePeriod: createRentalDto.pricePeriod as any || equipment.pricePeriod as any
+        pricePeriod: createRentalDto.pricePeriod as any || equipment.pricePeriod as any,
+        // Localização do locatário
+        renterLatitude: createRentalDto.renterLatitude,
+        renterLongitude: createRentalDto.renterLongitude,
+        renterAddress: createRentalDto.renterAddress,
+        // Sistema de prioridade
+        hasPriority: createRentalDto.hasPriority || false,
+        priorityAmount: createRentalDto.priorityAmount,
+        priorityPaidAt: createRentalDto.hasPriority ? new Date() : undefined
       },
       include: {
         equipment: {
@@ -136,11 +149,49 @@ export class RentalService {
       }
     });
 
-    // Marcar equipamento como indisponível
-    await this.prisma.equipment.update({
-      where: { id: createRentalDto.equipmentId },
-      data: { isAvailable: false }
-    });
+    // Não marcar equipamento como indisponível ainda
+    // O equipamento só ficará indisponível quando a solicitação for aprovada
+
+    // Processar taxa de prioridade se solicitada
+    if (createRentalDto.hasPriority && createRentalDto.priorityAmount) {
+      try {
+        const wallet = await this.walletService.getWalletByUserId(createRentalDto.renterId);
+        if (wallet.balance >= createRentalDto.priorityAmount) {
+          await this.walletService.createTransaction({
+            walletId: wallet.id,
+            type: WalletTransactionType.PRIORITY_FEE,
+            amount: -createRentalDto.priorityAmount,
+            description: `Taxa de prioridade - Aluguel ${equipment.name}`,
+            status: 'COMPLETED' as any,
+            metadata: {
+              rentalId: rental.id,
+              equipmentId: equipment.id
+            }
+          });
+        } else {
+          // Se não tem saldo suficiente, remover prioridade
+          await this.prisma.rental.update({
+            where: { id: rental.id },
+            data: {
+              hasPriority: false,
+              priorityAmount: null,
+              priorityPaidAt: null
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Erro ao processar taxa de prioridade:', error);
+        // Continuar sem prioridade se houver erro
+        await this.prisma.rental.update({
+          where: { id: rental.id },
+          data: {
+            hasPriority: false,
+            priorityAmount: null,
+            priorityPaidAt: null
+          }
+        });
+      }
+    }
 
     return rental;
   }
@@ -197,7 +248,11 @@ export class RentalService {
             }
           }
         },
-        orderBy: { createdAt: 'desc' }
+        orderBy: [
+          { hasPriority: 'desc' }, // Prioridade primeiro
+          { priorityPaidAt: 'desc' }, // Depois por data de pagamento da prioridade
+          { createdAt: 'desc' } // Por último, por data de criação
+        ]
       }),
       this.prisma.rental.count({ where })
     ]);
@@ -283,12 +338,49 @@ export class RentalService {
       data: { status: status as any },
     });
 
-    // Se cancelado ou rejeitado, liberar equipamento
-    if (status === 'CANCELLED' || status === 'REJECTED') {
+    // Se aprovado, marcar equipamento como indisponível e rejeitar outras solicitações pendentes
+    if (status === 'APPROVED') {
+      // Marcar equipamento como indisponível
       await this.prisma.equipment.update({
         where: { id: rental.equipmentId },
-        data: { isAvailable: true }
+        data: { isAvailable: false }
       });
+
+      // Rejeitar automaticamente outras solicitações pendentes para o mesmo equipamento
+      await this.prisma.rental.updateMany({
+        where: {
+          equipmentId: rental.equipmentId,
+          status: 'PENDING',
+          id: { not: rental.id } // Excluir a solicitação atual
+        },
+        data: { status: 'REJECTED' }
+      });
+
+      // Registrar data de aprovação para controle de expiração
+      await this.prisma.rental.update({
+        where: { id: rental.id },
+        data: { approvedAt: new Date() }
+      });
+    }
+
+    // Se cancelado ou rejeitado, verificar se deve liberar equipamento
+    if (status === 'CANCELLED' || status === 'REJECTED') {
+      // Verificar se há outras solicitações aprovadas para este equipamento
+      const hasApprovedRentals = await this.prisma.rental.findFirst({
+        where: {
+          equipmentId: rental.equipmentId,
+          status: { in: ['APPROVED', 'PAID', 'ACTIVE'] },
+          endDate: { gte: new Date() }
+        }
+      });
+
+      // Se não há outras solicitações aprovadas, liberar equipamento
+      if (!hasApprovedRentals) {
+        await this.prisma.equipment.update({
+          where: { id: rental.equipmentId },
+          data: { isAvailable: true }
+        });
+      }
     }
 
     return updatedRental;
@@ -588,5 +680,126 @@ export class RentalService {
     }
 
     return rentalsToRemind;
+  }
+
+  // Pagamento com carteira digital
+  async payWithWallet(rentalId: string, userId: string) {
+    const rental = await this.prisma.rental.findUnique({
+      where: { id: rentalId },
+      include: {
+        equipment: true,
+        renter: true
+      }
+    });
+
+    if (!rental) {
+      throw new NotFoundException('Rental not found');
+    }
+
+    if (rental.renterId !== userId) {
+      throw new ForbiddenException('You can only pay for your own rentals');
+    }
+
+    if (rental.paymentStatus === 'PAID') {
+      throw new BadRequestException('Rental already paid');
+    }
+
+    // Verificar saldo da carteira
+    const wallet = await this.walletService.getWalletByUserId(userId);
+    if (wallet.balance < rental.totalAmount) {
+      throw new BadRequestException('Insufficient wallet balance');
+    }
+
+    // Processar pagamento
+    await this.walletService.createTransaction({
+      walletId: wallet.id,
+      type: WalletTransactionType.PAYMENT,
+      amount: -rental.totalAmount,
+      description: `Pagamento de aluguel - ${rental.equipment.name}`,
+      status: 'COMPLETED' as any,
+      metadata: {
+        rentalId: rental.id,
+        equipmentId: rental.equipmentId,
+        ownerId: rental.ownerId
+      }
+    });
+
+    // Atualizar status do pagamento
+    const updatedRental = await this.prisma.rental.update({
+      where: { id: rentalId },
+      data: {
+        paymentStatus: 'PAID',
+        paymentMethod: 'WALLET' as any,
+        status: 'PAID'
+      },
+      include: {
+        equipment: true,
+        renter: true,
+        owner: true
+      }
+    });
+
+    return updatedRental;
+  }
+
+  async cancelExpiredApprovedRentals() {
+    // Obter timeout das variáveis de ambiente (padrão: 24 horas)
+    const timeoutHours = parseInt(process.env.RENTAL_PAYMENT_TIMEOUT_HOURS || '24');
+
+    // Calcular data limite (agora - timeout)
+    const expirationDate = new Date();
+    expirationDate.setHours(expirationDate.getHours() - timeoutHours);
+
+    // Buscar rentals aprovados que expiraram
+    const expiredRentals = await this.prisma.rental.findMany({
+      where: {
+        status: 'APPROVED',
+        paymentStatus: 'PENDING',
+        approvedAt: {
+          lte: expirationDate, // Aprovados há mais tempo que o timeout
+        },
+      },
+      include: {
+        equipment: true,
+        renter: true,
+        owner: true,
+      },
+    });
+
+    const cancelledRentals: any[] = [];
+
+    for (const rental of expiredRentals) {
+      try {
+        // Cancelar o rental
+        await this.prisma.rental.update({
+          where: { id: rental.id },
+          data: { status: 'CANCELLED' },
+        });
+
+        // Verificar se há outras solicitações aprovadas para este equipamento
+        const hasOtherApprovedRentals = await this.prisma.rental.findFirst({
+          where: {
+            equipmentId: rental.equipmentId,
+            status: { in: ['APPROVED', 'PAID', 'ACTIVE'] },
+            endDate: { gte: new Date() },
+            id: { not: rental.id }
+          }
+        });
+
+        // Se não há outras solicitações aprovadas, liberar equipamento
+        if (!hasOtherApprovedRentals) {
+          await this.prisma.equipment.update({
+            where: { id: rental.equipmentId },
+            data: { isAvailable: true }
+          });
+        }
+
+        cancelledRentals.push(rental);
+      } catch (error) {
+        console.error(`Erro ao cancelar rental expirado ${rental.id}:`, error);
+      }
+    }
+
+    return cancelledRentals;
   }
 }

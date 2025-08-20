@@ -29,6 +29,16 @@ export class CreateEquipmentDto {
   @IsString()
   category: string;
 
+  @ApiProperty({ example: 'Caterpillar', description: 'Equipment brand', required: false })
+  @IsOptional()
+  @IsString()
+  brand?: string;
+
+  @ApiProperty({ example: 'CAT 320', description: 'Equipment model', required: false })
+  @IsOptional()
+  @IsString()
+  model?: string;
+
   @ApiProperty({ example: 50.0, description: 'Rental price', required: false })
   @IsOptional()
   @IsNumber()

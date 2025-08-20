@@ -92,8 +92,8 @@ export class LocationSearchDto {
   @Min(1)
   page?: number = 1;
 
-  @ApiProperty({ 
-    example: 10, 
+  @ApiProperty({
+    example: 10,
     description: 'Número de itens por página',
     required: false,
     default: 10
@@ -104,4 +104,12 @@ export class LocationSearchDto {
   @Min(1)
   @Max(100)
   limit?: number = 10;
+
+  @ApiProperty({
+    example: ['Caterpillar', 'Komatsu'],
+    description: 'Lista de marcas para filtrar',
+    required: false
+  })
+  @IsOptional()
+  brands?: string[];
 }
